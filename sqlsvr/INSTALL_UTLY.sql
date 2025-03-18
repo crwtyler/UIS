@@ -1,3 +1,10 @@
+create table UTLY_PARAMETER
+(
+PARAMETER_NAME VARCHAR(40)
+,PARAMETER_VALUE VARCHAR(4000)
+
+);
+GO
 CREATE TABLE [dbo].[UTLY_REL_TREE](
 	[TABLE_NAME] [nvarchar](64) NULL,
 	[ANCESTOR_TABLE_NAME] [nvarchar](64) NULL,
@@ -69,6 +76,7 @@ IF object_id( 'dbo.UTLY_GET_REL_TREE') IS NULL
   EXEC sp_executeSql N'CREATE PROCEDURE dbo.UTLY_GET_REL_TREE AS SELECT NULL NILL;';
 GO
 
+
 ALTER PROCEDURE [dbo].[UTLY_GET_REL_TREE] 
           @P_CURRENT_TABLE NVARCHAR(64)
           , @P_ROOT_PATH NVARCHAR(4000)
@@ -79,10 +87,10 @@ ALTER PROCEDURE [dbo].[UTLY_GET_REL_TREE]
           , @P_LAST_TABLE NVARCHAR(64)
 AS
 BEGIN
-
+-- 2025-03-17 CRT: Fix to work with schemas
 /*
 Example:
-UTLY_GET_REL_TREE 
+UTLY_GET_REL_TREE_WS 
                                     'ICS_BASIC_PRMT' -- CURRENT_Table
                                     ,'' -- ROOT_PATH
                                     ,null -- JOIN PATH (root)
@@ -108,12 +116,29 @@ UTLY_GET_REL_TREE
   DECLARE @V_NEXT_DEPTH INTEGER;
   DECLARE @V_LAST_ALIAS NVARCHAR(64);
 
+  DECLARE @V_CURRENT_TABLE NVARCHAR(64);
+  DECLARE @V_CURRENT_SCHEMA NVARCHAR(64);
+  DECLARE @V_SCHEMATABLE_QTED NVARCHAR(129);
+
+    DECLARE @V_LAST_TABLE NVARCHAR(64);
+  DECLARE @V_LAST_SCHEMA NVARCHAR(64);
+  DECLARE @V_LAST_SCHEMATABLE_QTED NVARCHAR(129);
+
+  SET @V_CURRENT_TABLE = parsename(@P_CURRENT_TABLE,1);
+  SET @V_CURRENT_SCHEMA = COALESCE(parsename(@P_CURRENT_TABLE,2),'dbo');
+  SET @V_SCHEMATABLE_QTED = CONCAT(quotename(@V_CURRENT_SCHEMA),'.',quotename(@V_CURRENT_TABLE));
   
- -- SET @V_CURRENT_PK = @P_CURRENT_TABLE + '_ID'
+  SET @V_LAST_TABLE = parsename(@P_LAST_TABLE,1);
+  SET @V_LAST_SCHEMA = case when len(@P_LAST_TABLE) = 0 then '' else COALESCE(parsename(@P_LAST_TABLE,2),'dbo') END;
+  SET @V_LAST_SCHEMATABLE_QTED = case when len(@P_LAST_TABLE) = 0 then '' else CONCAT(quotename(@V_LAST_SCHEMA),'.',quotename(@V_LAST_TABLE)) END;
+  
+
+
+ -- SET @V_CURRENT_PK = @V_CURRENT_TABLE + '_ID'
   SET @V_LOOP_COUNT = 0;
 
   SET @P_ROOT_PATH = COALESCE(@P_ROOT_PATH,'')
-  SET @V_NEXT_PATH = @P_ROOT_PATH + '/' + @P_CURRENT_TABLE;
+  SET @V_NEXT_PATH = @P_ROOT_PATH + '/' + @V_SCHEMATABLE_QTED;
 --  SET @V_LAST_PK = (SELECT ANCESTOR_TABLE_ID from UTLY_REL_TREE WHERE TABLE_PATH = @V_NEXT_PATH AND DEPTH = 1)
  -- SELECT @V_LAST_PK=ANCESTOR_TABLE_ID,@V_CURRENT_PK=TABLE_ID from UTLY_REL_TREE WHERE TABLE_PATH = @V_NEXT_PATH AND DEPTH = 1
 
@@ -121,9 +146,9 @@ UTLY_GET_REL_TREE
           -- Get Alias Name as the max number of alias + 1
           SET @V_CURRENT_ALIAS = 
               CASE 
-                  WHEN COALESCE(@P_ROOT_PATH,'') = '' THEN @P_CURRENT_TABLE
+                  WHEN COALESCE(@P_ROOT_PATH,'') = '' THEN @V_CURRENT_TABLE
                   ELSE  
-                       SUBSTRING(@P_CURRENT_TABLE,1,1) 
+                       SUBSTRING(@V_CURRENT_TABLE,1,1) 
                        + CAST( 
                             (SELECT COALESCE(MAX(cast(SUBSTRING(TABLE_ALIAS,2,4) AS int)),0) + 1 from UTLY_REL_TREE WHERE DEPTH != 0)
                         as VARCHAR)
@@ -135,55 +160,85 @@ UTLY_GET_REL_TREE
  -- When no join path exists create basic from statement (level = 0)
  -- oterwise, append a new join with 'on' links to the existing one (level > 0)
   IF @P_JOIN_PATH is NULL
-    SET @V_NEXT_JOIN_PATH = ' from ' + @P_CURRENT_TABLE + ' ' + @P_CURRENT_TABLE + ' ' + char(13)+char(10)
+    SET @V_NEXT_JOIN_PATH = ' from ' + @V_SCHEMATABLE_QTED + ' [' + @V_CURRENT_TABLE + '] ' + char(13)+char(10)
   ELSE
-    SET @V_NEXT_JOIN_PATH = @P_JOIN_PATH + ' JOIN ' + @P_CURRENT_TABLE + ' ' + @V_CURRENT_ALIAS + char(13)+char(10)
-       + ' ON ' + @V_CURRENT_ALIAS + '.' + @P_CURRENT_ID 
-       + ' = ' + @V_LAST_ALIAS
-       + '.' + @P_LAST_ID  + ' ' + char(13)+char(10)
+    SET @V_NEXT_JOIN_PATH = @P_JOIN_PATH + ' JOIN ' + @V_SCHEMATABLE_QTED + ' ' + quotename(@V_CURRENT_ALIAS) + char(13)+char(10)
+       + ' ON ' + quotename(@V_CURRENT_ALIAS) + '.' + quotename(@P_CURRENT_ID )
+       + ' = ' + quotename(@V_LAST_ALIAS)
+       + '.' + quotename(@P_LAST_ID)  + ' ' + char(13)+char(10)
   
 
- 
-
-
-
-             insert into UTLY_REL_TREE(TABLE_NAME, ANCESTOR_TABLE_NAME,DEPTH, TABLE_PATH,JOIN_PATH,TABLE_ID,ANCESTOR_TABLE_ID,TABLE_ALIAS)
-              VALUES(@P_CURRENT_TABLE,@P_LAST_TABLE,@P_DEPTH,ISNULL(@P_ROOT_PATH,'') + '/' + @P_CURRENT_TABLE, @V_NEXT_JOIN_PATH ,@P_CURRENT_ID, @P_LAST_ID, @V_CURRENT_ALIAS);
-
-
+insert into UTLY_REL_TREE (
+	TABLE_NAME
+	, ANCESTOR_TABLE_NAME
+	,DEPTH
+	, TABLE_PATH
+	,JOIN_PATH
+	,TABLE_ID
+	,ANCESTOR_TABLE_ID
+	,TABLE_ALIAS
+)
+VALUES(
+	@V_SCHEMATABLE_QTED
+	,@V_LAST_SCHEMATABLE_QTED
+	,@P_DEPTH
+	,ISNULL(@P_ROOT_PATH,'') + '/' + @V_SCHEMATABLE_QTED
+	, @V_NEXT_JOIN_PATH 
+	,@P_CURRENT_ID
+	, @P_LAST_ID
+	, @V_CURRENT_ALIAS
+);
+print concat('Inserted Depth:' ,@P_DEPTH);
 
 
 WHILE
  (
-  select count(*) from UTLY_VW_FK WHERE FK_TABLE_NAME = @P_CURRENT_TABLE
+  select count(*) from UTLY_VW_FK VFK
+  WHERE concat(quotename(FK_SCHEMA_NAME),'.',quotename(FK_TABLE_NAME)) = @V_SCHEMATABLE_QTED
      AND NOT EXISTS (SELECT 1 from UTLY_REL_TREE 
-                       WHERE TABLE_PATH = @V_NEXT_PATH + '/' + UTLY_VW_FK.TABLE_NAME)
-     AND (@P_CURRENT_TABLE != @P_LAST_TABLE OR TABLE_NAME != @P_CURRENT_TABLE)                  
+                       WHERE TABLE_PATH = @V_NEXT_PATH + '/' + concat(quotename(VFK.SCHEMA_NAME),'.',quotename(VFK.TABLE_NAME)) )
+     AND (@V_SCHEMATABLE_QTED != @V_LAST_SCHEMATABLE_QTED OR concat(quotename(SCHEMA_NAME),'.',quotename(TABLE_NAME)) != @V_SCHEMATABLE_QTED)                  
                        ) > 0
     BEGIN
 
-
   
-          SELECT TOP 1 @V_NEXT_TABLE=TABLE_NAME,@V_NEXT_PK_COL=COLUMN_NAME, @V_NEXT_FK_COL=FK_COLUMN_NAME 
-          from UTLY_VW_FK WHERE FK_TABLE_NAME = @P_CURRENT_TABLE
-             AND NOT EXISTS (SELECT 1 from UTLY_REL_TREE 
-                       WHERE TABLE_PATH = @V_NEXT_PATH + '/' + UTLY_VW_FK.TABLE_NAME)
-             AND (@P_CURRENT_TABLE != @P_LAST_TABLE OR TABLE_NAME != @P_CURRENT_TABLE)                       
-                             ;
+          SELECT TOP 1 
+			@V_NEXT_TABLE=concat(quotename(SCHEMA_NAME),'.',quotename(TABLE_NAME))
+			,@V_NEXT_PK_COL=COLUMN_NAME
+			, @V_NEXT_FK_COL=FK_COLUMN_NAME 
+          from UTLY_VW_FK VFK
+		  WHERE 
+			concat(quotename(FK_SCHEMA_NAME),'.',quotename(FK_TABLE_NAME)) = @V_SCHEMATABLE_QTED
+             AND NOT EXISTS (
+						SELECT 1 from UTLY_REL_TREE 
+						WHERE TABLE_PATH = @V_NEXT_PATH + '/' + concat(quotename(VFK.SCHEMA_NAME),'.',quotename(VFK.TABLE_NAME))
+					 )
+     AND (@V_SCHEMATABLE_QTED != @V_LAST_SCHEMATABLE_QTED OR concat(quotename(SCHEMA_NAME),'.',quotename(TABLE_NAME)) != @V_SCHEMATABLE_QTED)                        
+    ;
+ 
+print '@V_SCHEMATABLE_QTED:' + @V_SCHEMATABLE_QTED
+print '@V_NEXT_TABLE:' + @V_NEXT_TABLE -- Table Name (current) for run being called
+print '@V_NEXT_PATH:' + @V_NEXT_PATH -- ROOT_PATH
+print '@V_NEXT_JOIN_PATH:' + @V_NEXT_JOIN_PATH -- JOIN PATH (root)
+print concat('@V_NEXT_DEPTH:' , @V_NEXT_DEPTH) -- DEPTH
+print '@V_NEXT_FK_COL:' + @V_NEXT_FK_COL -- LAST_ID
+print '@V_NEXT_PK_COL:' + @V_NEXT_PK_COL -- CURRENT_ID
+print '@V_CURRENT_TABLE:' + @V_CURRENT_TABLE -- LAST_TABLE
+
 
 
 
               SET @V_NEXT_DEPTH = @P_DEPTH  + 1;
      
 
-            exec UTLY_GET_REL_TREE 
+            exec UTLY_GET_REL_TREE_WS 
                                     @V_NEXT_TABLE -- CURRENT_Table
                                     ,@V_NEXT_PATH -- ROOT_PATH
                                     ,@V_NEXT_JOIN_PATH -- JOIN PATH (root)
                                     ,@V_NEXT_DEPTH -- DEPTH
                                     ,@V_NEXT_FK_COL -- LAST_ID
                                     ,@V_NEXT_PK_COL -- CURRENT_ID
-                                    ,@P_CURRENT_TABLE -- LAST_TABLE
+                                    ,@V_CURRENT_TABLE -- LAST_TABLE
                                     ;
                                     
 
@@ -198,7 +253,6 @@ WHILE
 
 
 END -- End procedure
-
 
 GO
 -- dbo.UTLY_EXPORT_TO_TABLE 
@@ -430,7 +484,7 @@ GO
 -- Exports data from DB that follows a parent-child structure
 /*
 Example:
-dbo.UTLY_EXPORT_TREE 'ICS_BASIC_PRMT','ICS_BASIC_PRMT_ID','WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
+dbo.UTLY_EXPORT_TREE_INSERT 'ICS_BASIC_PRMT','ICS_BASIC_PRMT_ID','WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
 
 select STATEMENT_TEXT from UTLY_SQL_STATEMENTS order by STATEMENT_SEQ;
 
@@ -441,8 +495,8 @@ NOTES:  Be sure to double-quote strins in the where statement (include the word 
 
 */
 
-IF object_id( 'dbo.UTLY_EXPORT_TREE') IS NULL 
-  EXEC sp_executeSql N'CREATE PROCEDURE dbo.UTLY_EXPORT_TREE AS SELECT NULL NILL;';
+IF object_id( 'dbo.UTLY_EXPORT_TREE_INSERT') IS NULL 
+  EXEC sp_executeSql N'CREATE PROCEDURE dbo.UTLY_EXPORT_TREE_INSERT AS SELECT NULL NILL;';
 GO
 
 SET ANSI_NULLS ON
@@ -452,10 +506,8 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-ALTER PROCEDURE [dbo].[UTLY_EXPORT_TREE] 
-          @P_ROOT_TABLE NVARCHAR(64)
-          ,@P_ROOT_TABLE_ID NVARCHAR(64)
-          , @P_WHERE_CLAUSE VARCHAR(max)
+ALTER PROCEDURE [dbo].[UTLY_EXPORT_TREE_INSERT] 
+           @P_WHERE_CLAUSE VARCHAR(max)
 
 AS
 BEGIN
@@ -476,7 +528,7 @@ BEGIN
 -- Exports data from DB that follows a parent-child structure
 /*
 Example:
-dbo.UTLY_EXPORT_TREE 'ICS_BASIC_PRMT','ICS_BASIC_PRMT_ID','WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
+dbo.UTLY_EXPORT_TREE_INSERT 'ICS_BASIC_PRMT','ICS_BASIC_PRMT_ID','WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
 
 select STATEMENT_TEXT from UTLY_SQL_STATEMENTS order by STATEMENT_SEQ;
 
@@ -491,20 +543,6 @@ NOTES:  Be sure to double-quote strins in the where statement (include the word 
   FOR
   SELECT TABLE_NAME, TABLE_ID, TABLE_ALIAS, JOIN_PATH, TABLE_PATH FROM UTLY_REL_TREE order by TABLE_PATH;
 
-  delete from UTLY_REL_TREE;
-
-exec UTLY_GET_REL_TREE 
-                                    @P_ROOT_TABLE -- CURRENT_Table
-                                    ,'' -- ROOT_PATH
-                                    ,null -- JOIN PATH (root)
-                                    ,0 -- DEPTH
-                                    ,'' -- LAST_ID
-                                    ,@P_ROOT_TABLE_ID -- CURRENT_ID
-                                    ,'' -- LAST_TABLE
-                                    ;
-
-DELETE from UTLY_SQL_STATEMENTS;
-
 
   BEGIN TRY
 
@@ -515,7 +553,7 @@ DELETE from UTLY_SQL_STATEMENTS;
   WHILE @@FETCH_STATUS = 0
     BEGIN
 
-    SET @V_TABLE_WHERE = ' WHERE ' + @V_CQ + @V_TABLE_NAME + @V_CQ + '.'+ @V_CQ +@V_TABLE_ID + @V_CQ + ' IN (SELECT ' + @V_TABLE_ALIAS + '.' + @V_CQ + @V_TABLE_ID + @V_CQ + ' ' + @V_JOIN_PATH + @P_WHERE_CLAUSE +')';
+    SET @V_TABLE_WHERE = ' WHERE ' + parsename(@V_TABLE_NAME,1) +  '.'+ @V_TABLE_ID  + ' IN (SELECT ' + @V_TABLE_ALIAS + '.' +  @V_TABLE_ID +  ' ' + @V_JOIN_PATH + @P_WHERE_CLAUSE +')';
     print CONCAT(@V_TABLE_PATH,': ', @V_TABLE_NAME, @V_TABLE_WHERE);
     EXEC UTLY_EXPORT_TO_TABLE @V_TABLE_NAME, @V_TABLE_WHERE, 'UTLY_SQL_STATEMENTS';
 
@@ -557,11 +595,11 @@ GO
 
 
 
-IF object_id( 'dbo.UTLY_DELETE_TREE_TO_TABLE') IS NULL 
-  EXEC sp_executeSql N'CREATE PROCEDURE dbo.UTLY_DELETE_TREE_TO_TABLE AS SELECT NULL NILL;';
+IF object_id( 'dbo.UTLY_EXPORT_TREE_DELETE') IS NULL 
+  EXEC sp_executeSql N'CREATE PROCEDURE dbo.UTLY_EXPORT_TREE_DELETE AS SELECT NULL NILL;';
 GO
 
-ALTER PROCEDURE UTLY_DELETE_TREE_TO_TABLE @P_WHERE VARCHAR(max)
+ALTER PROCEDURE [dbo].[UTLY_EXPORT_TREE_DELETE] @P_WHERE VARCHAR(max)
 AS
 BEGIN
 
@@ -570,11 +608,11 @@ BEGIN
 -- Call After running UTLY_GET_REL_TREE 
 /*
 Example:
-dbo.UTLY_DELETE_TREE_TO_TABLE 'ICS_BASIC_PRMT','WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
+dbo.UTLY_EXPORT_TREE_DELETE 'WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
 
 select STATEMENT_TEXT from UTLY_SQL_STATEMENTS order by STATEMENT_SEQ;
 
-NOTES:  Be sure to double-quote strins in the where statement (include the word Where),
+NOTES:  Be sure to double-singlequote strings in the where statement (start with the word WHERE),
        Fully Qualify any IDs or stuff in the base table in the where statement.
        
        Statements will come out in order.
@@ -584,44 +622,7 @@ NOTES:  Be sure to double-quote strins in the where statement (include the word 
 DECLARE @V_CQ CHAR(1);
 DECLARE @V_NEWLINE VARCHAR(2);
 
-SET @V_NEWLINE = CHAR(13);
-SET @V_CQ = '"';
 
-insert into UTLY_SQL_STATEMENTS(STATEMENT_TEXT)
-select
-CONCAT(
-'DELETE ',TABLE_ALIAS,' ' , JOIN_PATH , ' ', @P_WHERE , ';'
-
-)
- from UTLY_REL_TREE order by Depth desc;
-
-end
-GO
-
-IF object_id( 'dbo.UTLY_SELECT_TREE_TO_TABLE') IS NULL 
-  EXEC sp_executeSql N'CREATE PROCEDURE dbo.UTLY_SELECT_TREE_TO_TABLE AS SELECT NULL NILL;';
-GO
-
-ALTER PROCEDURE UTLY_SELECT_TREE_TO_TABLE @P_WHERE VARCHAR(max)
-as
-begin 
--- UTILITY Function (Not specific to this database or app)
--- Exports SELECT statements to show data from tree with Relational Integrety.
--- Call After running UTLY_GET_REL_TREE 
-/*
-Example:
-dbo.UTLY_SELECT_TREE_TO_TABLE 'ICS_BASIC_PRMT','WHERE ICS_BASIC_PRMT.ICS_BASIC_PRMT_ID = ''1515266e-9c13-4469-9e8a-ee609c08e7b1'''
-
-select STATEMENT_TEXT from UTLY_SQL_STATEMENTS order by STATEMENT_SEQ;
-
-NOTES:  Be sure to double-quote strins in the where statement (include the word Where),
-       Fully Qualify any IDs or stuff in the base table in the where statement.
-       
-       Statements will come out in order.
-
-*/
-DECLARE @V_CQ CHAR(1);
-DECLARE @V_NEWLINE VARCHAR(2);
 
 SET @V_NEWLINE = CHAR(13);
 SET @V_CQ = '"';
@@ -629,7 +630,7 @@ SET @V_CQ = '"';
 insert into UTLY_SQL_STATEMENTS(STATEMENT_TEXT)
 select
 CONCAT(
-'SELECT  ',TABLE_ALIAS,'.* ' , JOIN_PATH , ' ', @P_WHERE , ';'
+'DELETE [',TABLE_ALIAS,'] ' , JOIN_PATH , ' ', @P_WHERE , ';'
 
 )
  from UTLY_REL_TREE order by Depth desc;
