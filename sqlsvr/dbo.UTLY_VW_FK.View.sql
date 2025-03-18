@@ -1,0 +1,26 @@
+/****** Object:  View [dbo].[UTLY_VW_FK]    Script Date: 7/12/2017 9:05:08 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+create view [dbo].[UTLY_VW_FK]
+as
+SELECT 
+    ccu.table_name AS TABLE_NAME
+    ,ccu.constraint_name AS FK_NAME
+    ,ccu.column_name AS COLUMN_NAME
+    ,kcu.table_name AS FK_TABLE_NAME
+    ,kcu.column_name AS FK_COLUMN_NAME
+   
+FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+    INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+        ON ccu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME 
+    INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
+        ON kcu.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME  
+
+GO
+
+

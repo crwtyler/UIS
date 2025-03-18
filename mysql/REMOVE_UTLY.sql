@@ -1,0 +1,11 @@
+
+
+DROP PROCEDURE IF EXISTS `UTLY_EXPORT_TO_TABLE`;
+
+DROP PROCEDURE IF EXISTS `UTLY_GET_REL_TREE`;
+
+drop view if exists UTLY_VW_FK;
+
+drop table if exists UTLY_SQL_STATEMENTS;
+
+drop table if exists `UTLY_REL_TREE`;
