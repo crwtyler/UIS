@@ -47,12 +47,15 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-create view [dbo].[UTLY_VW_FK]
+CREATE view [dbo].[UTLY_VW_FK]
 as
+-- 2025-03-17 CRT: Add Schema for SqlServer
 SELECT 
-    ccu.table_name AS TABLE_NAME
+	ccu.TABLE_SCHEMA as SCHEMA_NAME
+    ,ccu.table_name AS TABLE_NAME
     ,ccu.constraint_name AS FK_NAME
     ,ccu.column_name AS COLUMN_NAME
+	,kcu.TABLE_SCHEMA as FK_SCHEMA_NAME
     ,kcu.table_name AS FK_TABLE_NAME
     ,kcu.column_name AS FK_COLUMN_NAME
    
@@ -88,9 +91,10 @@ ALTER PROCEDURE [dbo].[UTLY_GET_REL_TREE]
 AS
 BEGIN
 -- 2025-03-17 CRT: Fix to work with schemas
+-- 2025-03-29 CRT: cleanup
 /*
 Example:
-UTLY_GET_REL_TREE_WS 
+UTLY_GET_REL_TREE 
                                     'ICS_BASIC_PRMT' -- CURRENT_Table
                                     ,'' -- ROOT_PATH
                                     ,null -- JOIN PATH (root)
@@ -231,7 +235,7 @@ print '@V_CURRENT_TABLE:' + @V_CURRENT_TABLE -- LAST_TABLE
               SET @V_NEXT_DEPTH = @P_DEPTH  + 1;
      
 
-            exec UTLY_GET_REL_TREE_WS 
+            exec UTLY_GET_REL_TREE 
                                     @V_NEXT_TABLE -- CURRENT_Table
                                     ,@V_NEXT_PATH -- ROOT_PATH
                                     ,@V_NEXT_JOIN_PATH -- JOIN PATH (root)

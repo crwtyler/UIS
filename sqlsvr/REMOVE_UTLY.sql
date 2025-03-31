@@ -13,7 +13,7 @@ drop procedure if exists  dbo.UTLY_EXPORT_TREE_INSERT;
 drop procedure if exists  dbo.UTLY_EXPORT_TREE_DELETE;
 
 
-drop view if existsdbo.UTLY_VW_FK;
+drop view if exists dbo.UTLY_VW_FK;
 
 drop table if exists UTLY_SQL_STATEMENTS;
 drop table if exists UTLY_REL_TREE;

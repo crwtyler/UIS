@@ -6,12 +6,15 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-create view [dbo].[UTLY_VW_FK]
+CREATE view [dbo].[UTLY_VW_FK]
 as
+-- 2025-03-17 CRT: Add Schema for SqlServer
 SELECT 
-    ccu.table_name AS TABLE_NAME
+	ccu.TABLE_SCHEMA as SCHEMA_NAME
+    ,ccu.table_name AS TABLE_NAME
     ,ccu.constraint_name AS FK_NAME
     ,ccu.column_name AS COLUMN_NAME
+	,kcu.TABLE_SCHEMA as FK_SCHEMA_NAME
     ,kcu.table_name AS FK_TABLE_NAME
     ,kcu.column_name AS FK_COLUMN_NAME
    
