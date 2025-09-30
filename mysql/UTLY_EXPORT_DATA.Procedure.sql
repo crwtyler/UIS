@@ -11,7 +11,7 @@ BEGIN
 
 2013-11-07 CT: Created
 2013-11-11 CT: Added more types (still more need to be added)
-2025-09-30 CRT: changed name to UTLY_EXPORT_DATA and added seperate target table name, made outputtable a constant.
+2025-09-30 CRT: changed name to UTLY_EXPORT_DATA and added seperate target table name, made outputtable a constant. fix
 
 
 This will output select statements for any table with a filter (where statement)
@@ -174,7 +174,14 @@ CONCAT(
   ,',\');\') AS SQL_INSERT FROM `', p_source_table,'` ', p_where , ';'
 )
  into v_SQL
-	 from information_schema.columns where TABLE_SCHEMA = database() AND TABLE_NAME = p_source_table ORDER BY ORDINAL_POSITION;
+	 from information_schema.columns
+        where table_schema = DATABASE()
+    --    and DATA_TYPE IN ('varchar','char','BLOB','TEXT','SET')
+       -- and IS_NULLABLE = 'YES'
+       AND NOT((EXTRA LIKE '%auto_increment%' AND p_options LIKE '%-no_identity%' ))
+       AND (p_options NOT LIKE CONCAT('%','-exclude:',COLUMN_NAME,'%'))
+        and TABLE_NAME = p_source_table
+        ORDER BY ORDINAL_POSITION ;
 -- -----------
 
   SET @v_SQL = CONCAT('INSERT INTO `', v_output_table, '` (STATEMENT_TEXT) ' ,v_SQL);
