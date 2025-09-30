@@ -3,23 +3,26 @@
 -- MySQL
 DELIMITER $$
 
-DROP PROCEDURE IF EXISTS `UTLY_EXPORT_TO_TABLE` $$
-CREATE PROCEDURE `UTLY_EXPORT_TO_TABLE`(
-    p_TableName VARCHAR(64), IN p_Where TEXT, IN p_TargetTable VARCHAR(64))
+DROP PROCEDURE IF EXISTS `UTLY_EXPORT_DATA` $$
+CREATE PROCEDURE `UTLY_EXPORT_DATA`(
+    p_source_table VARCHAR(64), IN p_where TEXT, IN p_target_table VARCHAR(64), IN p_options VARCHAR(50))
 BEGIN
 /*
 
 2013-11-07 CT: Created
 2013-11-11 CT: Added more types (still more need to be added)
-2025-09-30 CRT: fixed database hardwired to wrp
+2025-09-30 CRT: changed name to UTLY_EXPORT_DATA and added seperate target table name, made outputtable a constant.
+
 
 This will output select statements for any table with a filter (where statement)
 
-call UTLC_EXPORT_TO_TABLE 'tablename', ' where thing = ''condition'' ', 'UTLC_SQL_STATEMENTS';
+call UTLC_EXPORT_TO_TABLE 'tablename', ' where thing = ''condition'' ', 'tablename_for_stmts';
 
-Target table should be a table consisting of one row of type text
+Target table should be the table name necessary for the inserts.
 
-create table STATEMENTS (
+Data will reside in the output table, which should be:
+
+create table UTLY_SQL_STATEMENTS (
   STATEMENT_ORDER INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   STATEMENT_TEXT TEXT
 );
@@ -37,6 +40,8 @@ create table STATEMENTS (
     DECLARE v_column_type varchar(64);
     DECLARE v_result LONGTEXT;
     DECLARE v_CL_SQL LONGTEXT;
+	DECLARE v_output_table VARCHAR(64) DEFAULT 'UTLY_SQL_STATEMENTS';
+	DECLARE v_old_maxlength INT;
 
     DECLARE no_more_rows BOOLEAN;
 
@@ -47,12 +52,16 @@ create table STATEMENTS (
        from information_schema.columns
         where table_schema = DATABASE()
     --    and DATA_TYPE IN ('varchar','char','BLOB','TEXT','SET')
-        and IS_NULLABLE = 'YES'
-        and table_name = p_TableName;
-
+       -- and IS_NULLABLE = 'YES'
+       AND NOT((EXTRA LIKE '%auto_increment%' AND p_options LIKE '%-no_identity%' ))
+       AND (p_options NOT LIKE CONCAT('%','-exclude:',COLUMN_NAME,'%'))
+        and TABLE_NAME = p_source_table
+        ORDER BY ORDINAL_POSITION  
+     ;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND
         SET no_more_rows = TRUE;
+
 
  SET SESSION group_concat_max_len = 100000;
 
@@ -65,15 +74,20 @@ FROM
  select
    CONCAT
     (
-      'INSERT IGNORE INTO `',p_TableName,'` (',
+      'INSERT IGNORE INTO `',p_target_table,'` (',
       GROUP_CONCAT(
         '  ', CONCAT('`',COLUMN_NAME,'`') ORDER BY ORDINAL_POSITION SEPARATOR ','
       ),
     ')  '
     ) AS INSERTSQL
-   from information_schema.columns
-   where TABLE_SCHEMA = database()
-    AND TABLE_NAME = p_TableName
+       from information_schema.columns
+        where table_schema = DATABASE()
+    --    and DATA_TYPE IN ('varchar','char','BLOB','TEXT','SET')
+       -- and IS_NULLABLE = 'YES'
+       AND NOT((EXTRA LIKE '%auto_increment%' AND p_options LIKE '%-no_identity%' ))
+       AND (p_options NOT LIKE CONCAT('%','-exclude:',COLUMN_NAME,'%'))
+        and TABLE_NAME = p_source_table
+        ORDER BY ORDINAL_POSITION  
  ) THING;
 
     SET no_more_rows = FALSE; 
@@ -157,12 +171,13 @@ CONCAT(
 
 	),
 	')'
-  ,',\');\') AS SQL_INSERT FROM `', p_TableName,'` ', p_Where , ';'
-) into v_SQL
-	 from information_schema.columns where TABLE_SCHEMA = database() AND TABLE_NAME = p_TableName ORDER BY ORDINAL_POSITION;
+  ,',\');\') AS SQL_INSERT FROM `', p_source_table,'` ', p_where , ';'
+)
+ into v_SQL
+	 from information_schema.columns where TABLE_SCHEMA = database() AND TABLE_NAME = p_source_table ORDER BY ORDINAL_POSITION;
 -- -----------
 
-  SET @v_SQL = CONCAT('INSERT INTO `', p_TargetTable, '` (STATEMENT_TEXT) ' ,v_SQL);
+  SET @v_SQL = CONCAT('INSERT INTO `', v_output_table, '` (STATEMENT_TEXT) ' ,v_SQL);
 
   PREPARE STMT FROM @v_SQL;
 
