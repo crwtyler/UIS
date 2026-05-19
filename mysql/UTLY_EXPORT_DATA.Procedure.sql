@@ -12,6 +12,7 @@ BEGIN
 2013-11-07 CT: Created
 2013-11-11 CT: Added more types (still more need to be added)
 2025-09-30 CRT: changed name to UTLY_EXPORT_DATA and added seperate target table name, made outputtable a constant. fix
+2025-10-22 CRT: Fixed order of instanciated columns in created select (group by ) and applied options filter
 
 
 This will output select statements for any table with a filter (where statement)
@@ -168,7 +169,7 @@ CONCAT(
 			' END '
 			)
   END
-
+   ORDER BY ORDINAL_POSITION 
 	),
 	')'
   ,',\');\') AS SQL_INSERT FROM `', p_source_table,'` ', p_where , ';'
